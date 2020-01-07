@@ -70,16 +70,9 @@ func main() {
 	actionConfig := new(action.Configuration)
 	cmd := newRootCmd(actionConfig, os.Stdout, os.Args[1:])
 
-	// run when each command's execute method is called
-	cobra.OnInitialize(func() {
-		helmDriver := os.Getenv("HELM_DRIVER")
-		if err := actionConfig.Init(settings.RESTClientGetter(), settings.Namespace(), helmDriver, debug); err != nil {
-			log.Fatal(err)
-		}
-		if helmDriver == "memory" {
-			loadReleasesInMemory(actionConfig)
-		}
-	})
+	if err := actionConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), debug); err != nil {
+		log.Fatal(err)
+	}
 
 	if err := cmd.Execute(); err != nil {
 		debug("%+v", err)
