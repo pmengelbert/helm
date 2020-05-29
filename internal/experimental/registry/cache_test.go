@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 )
 
@@ -16,6 +15,7 @@ func TestChartListWillNotCrash(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	defer os.RemoveAll(tmpDir)
 
 	cache, err := NewCache(CacheOptRoot(tmpDir))
 	if err != nil {
@@ -34,42 +34,32 @@ func TestChartListWillNotCrash(t *testing.T) {
 	rand.Read(data)
 
 	numCharts := 5000
-	var wg sync.WaitGroup
 	for i := 0; i < numCharts; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			ref, err := ParseReference(fmt.Sprintf("localhost:5000/chart%d:latest", i))
-			if err != nil {
-				t.Error(err)
-			}
+		ref, err := ParseReference(fmt.Sprintf("localhost:5000/chart%d:latest", i))
+		if err != nil {
+			t.Error(err)
+		}
 
-			s := fmt.Sprintf("%d", i)
-			d := append(data, []byte(s)...)
+		s := fmt.Sprintf("%d", i)
+		d := append(data, []byte(s)...)
 
-			ch := &chart.Chart{
-				Metadata: &chart.Metadata{
-					APIVersion: chart.APIVersionV1,
-					Name:       s,
-					Version:    "1.2.3",
-				}, Files: []*chart.File{
-					{Name: "scheherazade/shahryar" + s + ".txt", Data: d},
-				}, Templates: []*chart.File{
-					{Name: filepath.Join(tmpDir, "nested", "dir", "thing" + s + ".yaml"), Data: d},
-				},
-			}
+		ch := &chart.Chart{
+			Metadata: &chart.Metadata{
+				APIVersion: chart.APIVersionV1,
+				Name:       s,
+				Version:    "1.2.3",
+			}, Files: []*chart.File{
+				{Name: "scheherazade/shahryar" + s + ".txt", Data: d},
+			}, Templates: []*chart.File{
+				{Name: filepath.Join(tmpDir, "nested", "dir", "thing"+s+".yaml"), Data: []byte(`abc123`)},
+			},
+		}
 
-
-			err = client.SaveChart(ch, ref)
-			if err != nil {
-				t.Error(err)
-			}
-		}()
+		err = client.SaveChart(ch, ref)
+		if err != nil {
+			t.Error(err)
+		}
 	}
-
-	go func() {
-		wg.Wait()
-	}()
 
 	err = client.PrintChartTable()
 	if err != nil {
