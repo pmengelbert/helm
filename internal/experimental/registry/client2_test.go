@@ -17,7 +17,11 @@ limitations under the License.
 package registry
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/opencontainers/go-digest"
+	"github.com/opencontainers/image-spec/specs-go"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -36,10 +40,23 @@ var (
 
 func TestStuff(t *testing.T) {
 	s = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Log(r.URL.Path)
 		body := []byte("nobody wanted this")
-		w.Write(body)
-		w.Header().Set("Content-Type", "application/vnd.oci.image.index.v1+json")
-		w.WriteHeader(http.StatusOK)
+		digest := digest.FromBytes(body)
+		_ = body
+		m := ocispec.Manifest{
+			Versioned:   specs.Versioned{},
+			Config:      ocispec.Descriptor{},
+			Layers:      []ocispec.Descriptor{ocispec.Descriptor{
+				MediaType:   "application/tar+gzip",
+				Digest:      digest,
+			}},
+			Annotations: nil,
+		}
+		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		w.WriteHeader(200)
+		data, _ := json.Marshal(&m)
+		w.Write(data)
 	}))
 
 	tmpDir, err := ioutil.TempDir("", "helm-pull-digest-test")
