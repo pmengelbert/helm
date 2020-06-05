@@ -31,6 +31,34 @@ import (
 	"helm.sh/helm/v3/pkg/chart"
 )
 
+type (
+	TarGzipWriter struct {
+		TarWriter *tar.Writer
+		GzipWriter *gzip.Writer
+		File *os.File
+	}
+
+	saveConfig struct {
+		noTimestamp bool
+	}
+
+	// SaveOpt is an option for modifying the behavior of Save
+	SaveOpt func(*saveConfig)
+)
+
+// WithoutTimestamp provides the ability to save tar archives without a timestamp
+func WithoutTimestamp() SaveOpt {
+	return func(cfg *saveConfig) {
+		cfg.noTimestamp = true
+	}
+}
+
+func (w *TarGzipWriter) Close() {
+	w.TarWriter.Close()
+	w.GzipWriter.Close()
+	w.File.Close()
+}
+
 var headerBytes = []byte("+aHR0cHM6Ly95b3V0dS5iZS96OVV6MWljandyTQo=")
 
 // SaveDir saves a chart as files in a directory.
@@ -100,55 +128,62 @@ func SaveDir(c *chart.Chart, dest string) error {
 //
 // This returns the absolute path to the chart archive file.
 func Save(c *chart.Chart, outDir string) (string, error) {
-	if err := c.Validate(); err != nil {
-		return "", errors.Wrap(err, "chart validation")
-	}
-
-	filename := fmt.Sprintf("%s-%s.tgz", c.Name(), c.Metadata.Version)
-	filename = filepath.Join(outDir, filename)
-	dir := filepath.Dir(filename)
-	if stat, err := os.Stat(dir); err != nil {
-		if os.IsNotExist(err) {
-			if err2 := os.MkdirAll(dir, 0755); err2 != nil {
-				return "", err2
-			}
-		} else {
-			return "", errors.Wrapf(err, "stat %s", dir)
-		}
-	} else if !stat.IsDir() {
-		return "", errors.Errorf("is not a directory: %s", dir)
-	}
-
-	f, err := os.Create(filename)
+	tgzWriter, err := makeTarGzipWriter(c, outDir)
 	if err != nil {
 		return "", err
 	}
 
-	// Wrap in gzip writer
-	zipper := gzip.NewWriter(f)
-	zipper.Header.Extra = headerBytes
-	zipper.Header.Comment = "Helm"
-
-	// Wrap in tar writer
-	twriter := tar.NewWriter(zipper)
+	filename := tgzWriter.File.Name()
 	rollback := false
+
 	defer func() {
-		twriter.Close()
-		zipper.Close()
-		f.Close()
+		tgzWriter.Close()
 		if rollback {
 			os.Remove(filename)
 		}
 	}()
 
-	if err := writeTarContents(twriter, c, ""); err != nil {
+	if err := writeTarContents(tgzWriter.TarWriter, c, "", time.Now()); err != nil {
 		rollback = true
 		return filename, err
 	}
 	return filename, nil
 }
 
-func writeTarContents(out *tar.Writer, c *chart.Chart, prefix string) error {
+func SaveWithOpts(c *chart.Chart, outDir string, opts ...SaveOpt) (string, error) {
+	config := new(saveConfig)
+	for _, fn := range opts {
+		fn(config)
+	}
+
+	tgzWriter, err := makeTarGzipWriter(c, outDir)
+	if err != nil {
+		return "", err
+	}
+
+	filename := tgzWriter.File.Name()
+	rollback := false
+
+	defer func() {
+		tgzWriter.Close()
+		if rollback {
+			os.Remove(filename)
+		}
+	}()
+
+	var timestamp time.Time
+	if !config.noTimestamp {
+		timestamp = time.Now()
+	}
+
+	if err := writeTarContents(tgzWriter.TarWriter, c, "", timestamp); err != nil {
+		rollback = true
+		return filename, err
+	}
+	return filename, nil
+}
+
+func writeTarContents(out *tar.Writer, c *chart.Chart, prefix string, timestamp time.Time) error {
 	base := filepath.Join(prefix, c.Name())
 
 	// Pull out the dependencies of a v1 Chart, since there's no way
@@ -165,7 +200,7 @@ func writeTarContents(out *tar.Writer, c *chart.Chart, prefix string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeToTar(out, filepath.Join(base, ChartfileName), cdata); err != nil {
+	if err := writeToTar(out, filepath.Join(base, ChartfileName), cdata, timestamp); err != nil {
 		return err
 	}
 
@@ -177,7 +212,7 @@ func writeTarContents(out *tar.Writer, c *chart.Chart, prefix string) error {
 			if err != nil {
 				return err
 			}
-			if err := writeToTar(out, filepath.Join(base, "Chart.lock"), ldata); err != nil {
+			if err := writeToTar(out, filepath.Join(base, "Chart.lock"), ldata, timestamp); err != nil {
 				return err
 			}
 		}
@@ -186,7 +221,7 @@ func writeTarContents(out *tar.Writer, c *chart.Chart, prefix string) error {
 	// Save values.yaml
 	for _, f := range c.Raw {
 		if f.Name == ValuesfileName {
-			if err := writeToTar(out, filepath.Join(base, ValuesfileName), f.Data); err != nil {
+			if err := writeToTar(out, filepath.Join(base, ValuesfileName), f.Data, timestamp); err != nil {
 				return err
 			}
 		}
@@ -197,7 +232,7 @@ func writeTarContents(out *tar.Writer, c *chart.Chart, prefix string) error {
 		if !json.Valid(c.Schema) {
 			return errors.New("Invalid JSON in " + SchemafileName)
 		}
-		if err := writeToTar(out, filepath.Join(base, SchemafileName), c.Schema); err != nil {
+		if err := writeToTar(out, filepath.Join(base, SchemafileName), c.Schema, timestamp); err != nil {
 			return err
 		}
 	}
@@ -205,7 +240,7 @@ func writeTarContents(out *tar.Writer, c *chart.Chart, prefix string) error {
 	// Save templates
 	for _, f := range c.Templates {
 		n := filepath.Join(base, f.Name)
-		if err := writeToTar(out, n, f.Data); err != nil {
+		if err := writeToTar(out, n, f.Data, timestamp); err != nil {
 			return err
 		}
 	}
@@ -213,14 +248,14 @@ func writeTarContents(out *tar.Writer, c *chart.Chart, prefix string) error {
 	// Save files
 	for _, f := range c.Files {
 		n := filepath.Join(base, f.Name)
-		if err := writeToTar(out, n, f.Data); err != nil {
+		if err := writeToTar(out, n, f.Data, timestamp); err != nil {
 			return err
 		}
 	}
 
 	// Save dependencies
 	for _, dep := range c.Dependencies() {
-		if err := writeTarContents(out, dep, filepath.Join(base, ChartsDir)); err != nil {
+		if err := writeTarContents(out, dep, filepath.Join(base, ChartsDir), timestamp); err != nil {
 			return err
 		}
 	}
@@ -228,17 +263,59 @@ func writeTarContents(out *tar.Writer, c *chart.Chart, prefix string) error {
 }
 
 // writeToTar writes a single file to a tar archive.
-func writeToTar(out *tar.Writer, name string, body []byte) error {
+func writeToTar(out *tar.Writer, name string, body []byte, timestamp time.Time) error {
 	// TODO: Do we need to create dummy parent directory names if none exist?
 	h := &tar.Header{
 		Name:    filepath.ToSlash(name),
 		Mode:    0644,
 		Size:    int64(len(body)),
-		ModTime: time.Now(),
+		ModTime: timestamp,
 	}
 	if err := out.WriteHeader(h); err != nil {
 		return err
 	}
 	_, err := out.Write(body)
 	return err
+}
+
+func makeTarGzipWriter(c *chart.Chart, outDir string) (*TarGzipWriter, error) {
+	if err := c.Validate(); err != nil {
+		return nil, errors.Wrap(err, "chart validation")
+	}
+
+	filename := fmt.Sprintf("%s-%s.tgz", c.Name(), c.Metadata.Version)
+	filename = filepath.Join(outDir, filename)
+	dir := filepath.Dir(filename)
+	if stat, err := os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			if err2 := os.MkdirAll(dir, 0755); err2 != nil {
+				return nil, err2
+			}
+		} else {
+			return nil, errors.Wrapf(err, "stat %s", dir)
+		}
+	} else if !stat.IsDir() {
+		return nil, errors.Errorf("is not a directory: %s", dir)
+	}
+
+	f, err := os.Create(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wrap in gzip writer
+	zipper := gzip.NewWriter(f)
+	zipper.Header.Extra = headerBytes
+	zipper.Header.Comment = "Helm"
+
+	// Wrap in tar writer
+	twriter := tar.NewWriter(zipper)
+
+	cxvf := &TarGzipWriter{
+		TarWriter:  twriter,
+		GzipWriter: zipper,
+		File:       f,
+	}
+
+	return cxvf, nil
 }
