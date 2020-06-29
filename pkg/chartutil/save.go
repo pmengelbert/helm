@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/pkg/errors"
@@ -110,7 +111,9 @@ func SaveDir(c *chart.Chart, dest string) error {
 
 	// Save dependencies
 	base := filepath.Join(outdir, ChartsDir)
-	for _, dep := range c.Dependencies() {
+	deps := chart.ChartList(c.Dependencies())
+	sort.Sort(deps)
+	for _, dep := range deps {
 		// Here, we write each dependency as a tar file.
 		if _, err := Save(dep, base); err != nil {
 			return errors.Wrapf(err, "saving %s", dep.ChartFullPath())

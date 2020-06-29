@@ -52,6 +52,22 @@ type Chart struct {
 	dependencies []*Chart
 }
 
+type ChartList []*Chart
+
+func(cl ChartList) Len() int {
+	return len(cl)
+}
+
+func(cl ChartList) Less(i, j int) bool {
+	return cl[i].Name() < cl[j].Name()
+}
+
+func(cl ChartList) Swap(i, j int) {
+	tmp := cl[i]
+	cl[i] = cl[j]
+	cl[j] = tmp
+}
+
 type CRD struct {
 	// Name is the File.Name for the crd file
 	Name string
