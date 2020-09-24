@@ -99,7 +99,7 @@ func (c *ChartDownloader) DownloadTo(ref, version, dest string) (string, *proven
 		return "", nil, err
 	}
 
-	name := filepath.Base(u.Path)
+	name := getDestFileName(u) // This will need to change, due to the way references are structured
 	destfile := filepath.Join(dest, name)
 	if err := fileutil.AtomicWriteFile(destfile, data, 0644); err != nil {
 		return destfile, nil, err
@@ -131,6 +131,18 @@ func (c *ChartDownloader) DownloadTo(ref, version, dest string) (string, *proven
 		}
 	}
 	return destfile, ver, nil
+}
+
+func getDestFileName(u *url.URL) string {
+	name := filepath.Base(u.Path)
+	if u.Scheme == "oci" {
+		parts := strings.Split(name, ":")
+		if len(parts) == 2 {
+			name = fmt.Sprintf("%s-%s.tar.gz", parts[0], parts[1])
+		}
+	}
+
+	return name
 }
 
 // ResolveChartVersion resolves a chart reference to a URL.

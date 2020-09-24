@@ -17,8 +17,10 @@ limitations under the License.
 package registry // import "helm.sh/helm/v3/internal/experimental/registry"
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"github.com/deislabs/oras/pkg/content"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -178,6 +180,34 @@ func (c *Client) PullChart(ref *Reference) error {
 		fmt.Fprintf(c.out, "Status: Chart is up to date for %s\n", ref.FullName())
 	}
 	return err
+}
+
+func (c *Client) PullChart2(ref *Reference) (*bytes.Buffer, error) {
+	buf := bytes.NewBuffer(nil)
+	if ref.Tag == "" {
+		return buf, errors.New("tag explicitly required")
+	}
+	fmt.Fprintf(c.out, "%s: Pulling from %s\n", ref.Tag, ref.Repo)
+	store, err := content.NewOCIStore("/tmp")
+	if err != nil {
+		return buf, err
+	}
+	manifest, _, err := oras.Pull(ctx(c.out, c.debug), c.resolver, ref.FullName(), store,
+		oras.WithPullEmptyNameAllowed(),
+		oras.WithAllowedMediaTypes(KnownMediaTypes()))
+	if err != nil {
+		return buf, err
+	}
+	err = c.cache.AddManifest(ref, &manifest)
+	if err != nil {
+		return buf, err
+	}
+	b, err := c.cache.FetchReference2(ref)
+	if err != nil {
+		return buf, err
+	}
+	buf = bytes.NewBuffer(b)
+	return buf, err
 }
 
 // SaveChart stores a copy of chart in local cache
