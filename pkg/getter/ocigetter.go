@@ -18,6 +18,7 @@ package getter
 import (
 	"bytes"
 	"crypto/tls"
+	"fmt"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/internal/experimental/registry"
 	"helm.sh/helm/v3/pkg/cli"
@@ -46,8 +47,6 @@ func (g *OCIGetter) get(href string) (*bytes.Buffer, error) {
 	buf := bytes.NewBuffer(nil)
 	settings := cli.New()
 
-	hostAndPath := strings.TrimPrefix(href, "oci://")
-	_ = hostAndPath
 	client, err := registry.NewClient(
 		registry.ClientOptDebug(settings.Debug),
 		registry.ClientOptWriter(os.Stdout),
@@ -57,7 +56,12 @@ func (g *OCIGetter) get(href string) (*bytes.Buffer, error) {
 		return nil, err
 	}
 
-	r, err := registry.ParseReference(hostAndPath)
+	ref := strings.TrimPrefix(href, "oci://")
+	if tag := g.opts.tagname; tag != "" {
+		ref = fmt.Sprintf("%s:%s", ref, tag)
+	}
+
+	r, err := registry.ParseReference(ref)
 	if err != nil {
 		return nil, err
 	}

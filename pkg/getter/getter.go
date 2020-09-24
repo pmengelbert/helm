@@ -37,6 +37,7 @@ type options struct {
 	username              string
 	password              string
 	userAgent             string
+	tagname               string
 	timeout               time.Duration
 }
 
@@ -87,6 +88,12 @@ func WithTLSClientConfig(certFile, keyFile, caFile string) Option {
 func WithTimeout(timeout time.Duration) Option {
 	return func(opts *options) {
 		opts.timeout = timeout
+	}
+}
+
+func WithTagName(tagname string) Option {
+	return func(opts *options) {
+		opts.tagname = tagname
 	}
 }
 

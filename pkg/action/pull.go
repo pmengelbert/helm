@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -52,6 +53,10 @@ func NewPull() *Pull {
 	return &Pull{}
 }
 
+type chartRef interface {
+
+}
+
 // Run executes 'helm pull' against the given release.
 func (p *Pull) Run(chartRef string) (string, error) {
 	var out strings.Builder
@@ -68,6 +73,15 @@ func (p *Pull) Run(chartRef string) (string, error) {
 		},
 		RepositoryConfig: p.Settings.RepositoryConfig,
 		RepositoryCache:  p.Settings.RepositoryCache,
+	}
+
+	if strings.HasPrefix(chartRef, "oci://") {
+		ref, tag, err := parseOCIRef(chartRef)
+		if err != nil {
+			return out.String(), err
+		}
+		chartRef = ref
+		c.Options = append(c.Options, getter.WithTagName(tag))
 	}
 
 	if p.Verify {
@@ -111,6 +125,7 @@ func (p *Pull) Run(chartRef string) (string, error) {
 
 	// After verification, untar the chart into the requested directory.
 	if p.Untar {
+		// Remove the tag name
 		ud := p.UntarDir
 		if !filepath.IsAbs(ud) {
 			ud = filepath.Join(p.DestDir, ud)
@@ -123,6 +138,7 @@ func (p *Pull) Run(chartRef string) (string, error) {
 			_, chartName := filepath.Split(chartRef)
 			udCheck = filepath.Join(udCheck, chartName)
 		}
+
 		if _, err := os.Stat(udCheck); err != nil {
 			if err := os.MkdirAll(udCheck, 0755); err != nil {
 				return out.String(), errors.Wrap(err, "failed to untar (mkdir)")
@@ -135,4 +151,16 @@ func (p *Pull) Run(chartRef string) (string, error) {
 		return out.String(), chartutil.ExpandFile(ud, saved)
 	}
 	return out.String(), nil
+}
+
+func parseOCIRef(chartRef string) (string, string, error) {
+	refTagRegexp := regexp.MustCompile(`^(oci://[^:]+):(.*)$`)
+	caps := refTagRegexp.FindStringSubmatch(chartRef)
+	if len(caps) != 3 {
+		return "", "", errors.Errorf("improperly formatted oci chart reference: %s", chartRef)
+	}
+	chartRef = caps[1];
+	tag := caps[2]
+
+	return chartRef, tag, nil
 }
