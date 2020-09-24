@@ -20,6 +20,8 @@ import (
 	"bytes"
 	"time"
 
+	"helm.sh/helm/v3/internal/experimental/registry"
+
 	"github.com/pkg/errors"
 
 	"helm.sh/helm/v3/pkg/cli"
@@ -33,12 +35,12 @@ type options struct {
 	certFile              string
 	keyFile               string
 	caFile                string
-	isOCI                 bool
 	insecureSkipVerifyTLS bool
 	username              string
 	password              string
 	userAgent             string
 	tagname               string
+	registryClient        *registry.Client
 	timeout               time.Duration
 }
 
@@ -95,6 +97,12 @@ func WithTimeout(timeout time.Duration) Option {
 func WithTagName(tagname string) Option {
 	return func(opts *options) {
 		opts.tagname = tagname
+	}
+}
+
+func WithRegistryClient(client *registry.Client) Option {
+	return func(opts *options) {
+		opts.registryClient = client
 	}
 }
 

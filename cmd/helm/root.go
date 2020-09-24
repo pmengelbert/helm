@@ -23,12 +23,13 @@ import (
 	"log"
 	"strings"
 
+	"helm.sh/helm/v3/internal/experimental/registry"
+
 	"github.com/spf13/cobra"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"helm.sh/helm/v3/internal/experimental/registry"
 	"helm.sh/helm/v3/pkg/action"
 )
 
@@ -152,12 +153,22 @@ func newRootCmd(actionConfig *action.Configuration, out io.Writer, args []string
 	flags.ParseErrorsWhitelist.UnknownFlags = true
 	flags.Parse(args)
 
+	registryClient, err := registry.NewClient(
+		registry.ClientOptDebug(settings.Debug),
+		registry.ClientOptWriter(out),
+		registry.ClientOptCredentialsFile(settings.RegistryConfig),
+	)
+	if err != nil {
+		return nil, err
+	}
+	actionConfig.RegistryClient = registryClient
+
 	// Add subcommands
 	cmd.AddCommand(
 		// chart commands
 		newCreateCmd(out),
 		newDependencyCmd(out),
-		newPullCmd(out),
+		newPullCmd(actionConfig, out),
 		newShowCmd(out),
 		newLintCmd(out),
 		newPackageCmd(out),
@@ -187,15 +198,6 @@ func newRootCmd(actionConfig *action.Configuration, out io.Writer, args []string
 	)
 
 	// Add *experimental* subcommands
-	registryClient, err := registry.NewClient(
-		registry.ClientOptDebug(settings.Debug),
-		registry.ClientOptWriter(out),
-		registry.ClientOptCredentialsFile(settings.RegistryConfig),
-	)
-	if err != nil {
-		return nil, err
-	}
-	actionConfig.RegistryClient = registryClient
 	cmd.AddCommand(
 		newRegistryCmd(actionConfig, out),
 		newChartCmd(actionConfig, out),

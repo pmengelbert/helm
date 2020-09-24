@@ -46,11 +46,12 @@ type Pull struct {
 	VerifyLater bool
 	UntarDir    string
 	DestDir     string
+	cfg         *Configuration
 }
 
 // NewPull creates a new Pull object with the given configuration.
-func NewPull() *Pull {
-	return &Pull{}
+func NewPull(cfg *Configuration) *Pull {
+	return &Pull{cfg: cfg}
 }
 
 // Run executes 'helm pull' against the given release.
@@ -78,7 +79,7 @@ func (p *Pull) Run(chartRef string) (string, error) {
 		}
 		chartRef = ref
 		p.Version = tag
-		c.Options = append(c.Options, getter.WithTagName(tag))
+		c.Options = append(c.Options, getter.WithRegistryClient(p.cfg.RegistryClient), getter.WithTagName(tag))
 	}
 
 	if p.Verify {
@@ -122,7 +123,6 @@ func (p *Pull) Run(chartRef string) (string, error) {
 
 	// After verification, untar the chart into the requested directory.
 	if p.Untar {
-		// Remove the tag name
 		ud := p.UntarDir
 		if !filepath.IsAbs(ud) {
 			ud = filepath.Join(p.DestDir, ud)
@@ -156,7 +156,7 @@ func parseOCIRef(chartRef string) (string, string, error) {
 	if len(caps) != 3 {
 		return "", "", errors.Errorf("improperly formatted oci chart reference: %s", chartRef)
 	}
-	chartRef = caps[1];
+	chartRef = caps[1]
 	tag := caps[2]
 
 	return chartRef, tag, nil

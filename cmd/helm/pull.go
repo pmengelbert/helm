@@ -42,8 +42,8 @@ file, and MUST pass the verification process. Failure in any part of this will
 result in an error, and the chart will not be saved locally.
 `
 
-func newPullCmd(out io.Writer) *cobra.Command {
-	client := action.NewPull()
+func newPullCmd(cfg *action.Configuration, out io.Writer) *cobra.Command {
+	client := action.NewPull(cfg)
 
 	cmd := &cobra.Command{
 		Use:     "pull [chart URL | repo/chartname] [...]",

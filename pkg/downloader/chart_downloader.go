@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"helm.sh/helm/v3/internal/experimental/registry"
+
 	"github.com/pkg/errors"
 
 	"helm.sh/helm/v3/internal/fileutil"
@@ -68,6 +70,7 @@ type ChartDownloader struct {
 	Getters getter.Providers
 	// Options provide parameters to be passed along to the Getter being initialized.
 	Options          []getter.Option
+	RegistryClient   *registry.Client
 	RepositoryConfig string
 	RepositoryCache  string
 }
@@ -135,18 +138,6 @@ func (c *ChartDownloader) DownloadTo(ref, version, dest string) (string, *proven
 		}
 	}
 	return destfile, ver, nil
-}
-
-func getDestFileName(u *url.URL) string {
-	name := filepath.Base(u.Path)
-	if u.Scheme == "oci" {
-		parts := strings.Split(name, ":")
-		if len(parts) == 2 {
-			name = fmt.Sprintf("%s-%s.tar.gz", parts[0], parts[1])
-		}
-	}
-
-	return name
 }
 
 // ResolveChartVersion resolves a chart reference to a URL.

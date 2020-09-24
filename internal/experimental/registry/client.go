@@ -152,13 +152,10 @@ func (c *Client) PullChart(ref *Reference) (*bytes.Buffer, error) {
 		return buf, errors.New("tag explicitly required")
 	}
 	fmt.Fprintf(c.out, "%s: Pulling from %s\n", ref.Tag, ref.Repo)
-	store, err := content.NewOCIStore("/tmp")
-	if err != nil {
-		return buf, err
-	}
-	manifest, _, err := oras.Pull(ctx(c.out, c.debug), c.resolver, ref.FullName(), store,
+	manifest, _, err := oras.Pull(ctx(c.out, c.debug), c.resolver, ref.FullName(), content.NewMemoryStore(),
 		oras.WithPullEmptyNameAllowed(),
-		oras.WithAllowedMediaTypes(KnownMediaTypes()))
+		oras.WithAllowedMediaTypes(KnownMediaTypes()),
+		oras.WithContentProvideIngester(nil))
 	if err != nil {
 		return buf, err
 	}
@@ -166,10 +163,11 @@ func (c *Client) PullChart(ref *Reference) (*bytes.Buffer, error) {
 	if err != nil {
 		return buf, err
 	}
-	_, b, err := c.cache.FetchReference(ref)
+	summary, b, err := c.cache.FetchReference(ref)
 	if err != nil {
 		return buf, err
 	}
+	c.printCacheRefSummary(summary)
 	buf = bytes.NewBuffer(b)
 	return buf, err
 }

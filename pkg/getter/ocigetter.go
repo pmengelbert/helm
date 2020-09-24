@@ -17,17 +17,10 @@ package getter
 
 import (
 	"bytes"
-	"crypto/tls"
 	"fmt"
-	"github.com/pkg/errors"
-	"helm.sh/helm/v3/internal/experimental/registry"
-	"helm.sh/helm/v3/pkg/cli"
-	"net/http"
-	"os"
 	"strings"
 
-	"helm.sh/helm/v3/internal/tlsutil"
-	"helm.sh/helm/v3/internal/urlutil"
+	"helm.sh/helm/v3/internal/experimental/registry"
 )
 
 // OCIGetter is the default HTTP(/S) backend handler
@@ -45,16 +38,8 @@ func (g *OCIGetter) Get(href string, options ...Option) (*bytes.Buffer, error) {
 
 func (g *OCIGetter) get(href string) (*bytes.Buffer, error) {
 	buf := bytes.NewBuffer(nil)
-	settings := cli.New()
 
-	client, err := registry.NewClient(
-		registry.ClientOptDebug(settings.Debug),
-		registry.ClientOptWriter(os.Stdout),
-		registry.ClientOptCredentialsFile(settings.RegistryConfig),
-	)
-	if err != nil {
-		return nil, err
-	}
+	client := g.opts.registryClient
 
 	ref := strings.TrimPrefix(href, "oci://")
 	if tag := g.opts.tagname; tag != "" {
@@ -83,40 +68,4 @@ func NewOCIGetter(options ...Option) (Getter, error) {
 	}
 
 	return &client, nil
-}
-
-func (g *OCIGetter) httpClient() (*http.Client, error) {
-	transport := &http.Transport{
-		DisableCompression: true,
-		Proxy:              http.ProxyFromEnvironment,
-	}
-	if (g.opts.certFile != "" && g.opts.keyFile != "") || g.opts.caFile != "" {
-		tlsConf, err := tlsutil.NewClientTLS(g.opts.certFile, g.opts.keyFile, g.opts.caFile)
-		if err != nil {
-			return nil, errors.Wrap(err, "can't create TLS config for client")
-		}
-		tlsConf.BuildNameToCertificate()
-
-		sni, err := urlutil.ExtractHostname(g.opts.url)
-		if err != nil {
-			return nil, err
-		}
-		tlsConf.ServerName = sni
-
-		transport.TLSClientConfig = tlsConf
-	}
-
-	if g.opts.insecureSkipVerifyTLS {
-		transport.TLSClientConfig = &tls.Config{
-			InsecureSkipVerify: true,
-		}
-
-	}
-
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   g.opts.timeout,
-	}
-
-	return client, nil
 }
