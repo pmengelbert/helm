@@ -120,7 +120,7 @@ func (c *Client) Logout(hostname string) error {
 
 // PushChart uploads a chart to a registry
 func (c *Client) PushChart(ref *Reference) error {
-	r, err := c.cache.FetchReference(ref)
+	r, _, err := c.cache.FetchReference(ref)
 	if err != nil {
 		return err
 	}
@@ -146,43 +146,7 @@ func (c *Client) PushChart(ref *Reference) error {
 }
 
 // PullChart downloads a chart from a registry
-func (c *Client) PullChart(ref *Reference) error {
-	if ref.Tag == "" {
-		return errors.New("tag explicitly required")
-	}
-	existing, err := c.cache.FetchReference(ref)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(c.out, "%s: Pulling from %s\n", ref.Tag, ref.Repo)
-	manifest, _, err := oras.Pull(ctx(c.out, c.debug), c.resolver, ref.FullName(), c.cache.Ingester(),
-		oras.WithPullEmptyNameAllowed(),
-		oras.WithAllowedMediaTypes(KnownMediaTypes()),
-		oras.WithContentProvideIngester(c.cache.ProvideIngester()))
-	if err != nil {
-		return err
-	}
-	err = c.cache.AddManifest(ref, &manifest)
-	if err != nil {
-		return err
-	}
-	r, err := c.cache.FetchReference(ref)
-	if err != nil {
-		return err
-	}
-	if !r.Exists {
-		return errors.New(fmt.Sprintf("Chart not found: %s", r.Name))
-	}
-	c.printCacheRefSummary(r)
-	if !existing.Exists {
-		fmt.Fprintf(c.out, "Status: Downloaded newer chart for %s\n", ref.FullName())
-	} else {
-		fmt.Fprintf(c.out, "Status: Chart is up to date for %s\n", ref.FullName())
-	}
-	return err
-}
-
-func (c *Client) PullChart2(ref *Reference) (*bytes.Buffer, error) {
+func (c *Client) PullChart(ref *Reference) (*bytes.Buffer, error) {
 	buf := bytes.NewBuffer(nil)
 	if ref.Tag == "" {
 		return buf, errors.New("tag explicitly required")
@@ -202,7 +166,7 @@ func (c *Client) PullChart2(ref *Reference) (*bytes.Buffer, error) {
 	if err != nil {
 		return buf, err
 	}
-	b, err := c.cache.FetchReference2(ref)
+	_, b, err := c.cache.FetchReference(ref)
 	if err != nil {
 		return buf, err
 	}
@@ -227,7 +191,7 @@ func (c *Client) SaveChart(ch *chart.Chart, ref *Reference) error {
 
 // LoadChart retrieves a chart object by reference
 func (c *Client) LoadChart(ref *Reference) (*chart.Chart, error) {
-	r, err := c.cache.FetchReference(ref)
+	r, _, err := c.cache.FetchReference(ref)
 	if err != nil {
 		return nil, err
 	}

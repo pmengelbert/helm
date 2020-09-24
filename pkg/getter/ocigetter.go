@@ -66,7 +66,7 @@ func (g *OCIGetter) get(href string) (*bytes.Buffer, error) {
 		return nil, err
 	}
 
-	buf, err = client.PullChart2(r)
+	buf, err = client.PullChart(r)
 	if err != nil {
 		return nil, err
 	}

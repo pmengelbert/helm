@@ -87,32 +87,35 @@ func NewCache(opts ...CacheOption) (*Cache, error) {
 }
 
 // FetchReference retrieves a chart ref from cache
-func (cache *Cache) FetchReference(ref *Reference) (*CacheRefSummary, error) {
+func (cache *Cache) FetchReference(ref *Reference) (*CacheRefSummary, []byte, error) {
 	if err := cache.init(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	r := CacheRefSummary{
 		Name: ref.FullName(),
 		Repo: ref.Repo,
 		Tag:  ref.Tag,
 	}
+
+	contentBytes := []byte{}
+
 	for _, desc := range cache.ociStore.ListReferences() {
 		if desc.Annotations[ocispec.AnnotationRefName] == r.Name {
 			r.Exists = true
 			manifestBytes, err := cache.fetchBlob(&desc)
 			if err != nil {
-				return &r, err
+				return &r, nil, err
 			}
 			var manifest ocispec.Manifest
 			err = json.Unmarshal(manifestBytes, &manifest)
 			if err != nil {
-				return &r, err
+				return &r, nil, err
 			}
 			r.Manifest = &desc
 			r.Config = &manifest.Config
 			numLayers := len(manifest.Layers)
 			if numLayers < 1 {
-				return &r, errors.New(
+				return &r, nil, errors.New(
 					fmt.Sprintf("manifest does not contain at least 1 layer (total: %d)", numLayers))
 			}
 			var contentLayer *ocispec.Descriptor
@@ -123,33 +126,33 @@ func (cache *Cache) FetchReference(ref *Reference) (*CacheRefSummary, error) {
 				}
 			}
 			if contentLayer == nil {
-				return &r, errors.New(
+				return &r, nil, errors.New(
 					fmt.Sprintf("manifest does not contain a layer with mediatype %s", HelmChartContentLayerMediaType))
 			}
 			if contentLayer.Size == 0 {
-				return &r, errors.New(
+				return &r, nil, errors.New(
 					fmt.Sprintf("manifest layer with mediatype %s is of size 0", HelmChartContentLayerMediaType))
 			}
 			r.ContentLayer = contentLayer
 			info, err := cache.ociStore.Info(ctx(cache.out, cache.debug), contentLayer.Digest)
 			if err != nil {
-				return &r, err
+				return &r, nil, err
 			}
 			r.Size = info.Size
 			r.Digest = info.Digest
 			r.CreatedAt = info.CreatedAt
-			contentBytes, err := cache.fetchBlob(contentLayer)
+			contentBytes, err = cache.fetchBlob(contentLayer)
 			if err != nil {
-				return &r, err
+				return &r, nil, err
 			}
 			ch, err := loader.LoadArchive(bytes.NewBuffer(contentBytes))
 			if err != nil {
-				return &r, err
+				return &r, nil, err
 			}
 			r.Chart = ch
 		}
 	}
-	return &r, nil
+	return &r, contentBytes, nil
 }
 
 func (cache *Cache) FetchReference2(ref *Reference) ([]byte, error) {
@@ -231,7 +234,7 @@ func (cache *Cache) StoreReference(ref *Reference, ch *chart.Chart) (*CacheRefSu
 		Tag:   ref.Tag,
 		Chart: ch,
 	}
-	existing, _ := cache.FetchReference(ref)
+	existing, _, _ := cache.FetchReference(ref)
 	r.Exists = existing.Exists
 	config, _, err := cache.saveChartConfig(ch)
 	if err != nil {
@@ -264,7 +267,7 @@ func (cache *Cache) DeleteReference(ref *Reference) (*CacheRefSummary, error) {
 	if err := cache.init(); err != nil {
 		return nil, err
 	}
-	r, err := cache.FetchReference(ref)
+	r, _, err := cache.FetchReference(ref)
 	if err != nil || !r.Exists {
 		return r, err
 	}
@@ -291,7 +294,7 @@ func (cache *Cache) ListReferences() ([]*CacheRefSummary, error) {
 		if err != nil {
 			return rr, err
 		}
-		r, err := cache.FetchReference(ref)
+		r, _, err := cache.FetchReference(ref)
 		if err != nil {
 			return rr, err
 		}

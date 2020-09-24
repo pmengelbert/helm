@@ -100,8 +100,8 @@ func (c *ChartDownloader) DownloadTo(ref, version, dest string) (string, *proven
 	}
 
 	name := filepath.Base(u.Path)
-	if strings.Contains(name, ":") {
-		name = strings.Split(name, ":")[0]
+	if u.Scheme == "oci" {
+		name = fmt.Sprintf("%s-%s.tgz", name, version)
 	}
 
 	destfile := filepath.Join(dest, name)

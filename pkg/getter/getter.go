@@ -33,6 +33,7 @@ type options struct {
 	certFile              string
 	keyFile               string
 	caFile                string
+	isOCI                 bool
 	insecureSkipVerifyTLS bool
 	username              string
 	password              string

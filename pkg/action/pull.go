@@ -53,10 +53,6 @@ func NewPull() *Pull {
 	return &Pull{}
 }
 
-type chartRef interface {
-
-}
-
 // Run executes 'helm pull' against the given release.
 func (p *Pull) Run(chartRef string) (string, error) {
 	var out strings.Builder
@@ -81,6 +77,7 @@ func (p *Pull) Run(chartRef string) (string, error) {
 			return out.String(), err
 		}
 		chartRef = ref
+		p.Version = tag
 		c.Options = append(c.Options, getter.WithTagName(tag))
 	}
 
